@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Golden Egg Tycoon - Empire Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #4a90e2; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .btn-main { 
+            pointer-events: auto; display: none; position: absolute; 
+            top: 75%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #FFD700, #FFA500); border: none; 
+            padding: 15px 45px; font-weight: bold; cursor: pointer; border-radius: 50px;
+            color: white; font-size: 22px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); transition: 0.3s;
+        }
+
+        #shopUI { 
+            display: none; pointer-events: auto; position: absolute; 
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(15, 15, 15, 0.9); backdrop-filter: blur(20px);
+            color: white; padding: 35px; border: 1px solid rgba(255,255,255,0.2); 
+            border-radius: 30px; text-align: center; width: 380px;
+        }
+        .bank-info { font-size: 26px; margin-bottom: 25px; color: #2ecc71; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        
+        .item { 
+            background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+            padding: 18px; margin: 12px 0; cursor: pointer; border-radius: 15px; text-align: left; position: relative; transition: 0.2s;
+        }
+        .item:hover { background: rgba(255,215,0,0.1); border-color: #FFD700; }
+        .price { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #FFD700; }
+        .bought { color: #2ecc71 !important; }
+        .close-btn { margin-top: 25px; padding: 14px; width: 100%; cursor: pointer; border-radius: 12px; border: none; background: #e74c3c; color: white; font-weight: bold; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <button id="shopBtn" class="btn-main" onclick="openShop(event)">ENTER SHOP</button>
+        <div id="shopUI">
+            <h2 style="color:#FFD700; margin-top:0; letter-spacing:3px;">EGG BOUTIQUE</h2>
+            <div class="bank-info">Bank: $<span id="bankDisp">0.00</span></div>
+            <div style="max-height: 350px; overflow-y: auto; padding-right:10px;">
+                <div class="item" onclick="buy('night', 5000)"><strong>Night Mode</strong><span>Darker Atmosphere</span><div class="price" id="p-night">$5k</div></div>
+                <div class="item" onclick="buy('small', 50000)"><strong>Mini Egg</strong><span>Tiny Hitbox</span><div class="price" id="p-small">$50k</div></div>
+                <div class="item" onclick="buy('turbo', 250000)"><strong>Turbo Jetpack</strong><span>High Velocity</span><div class="price" id="p-turbo">$250k</div></div>
+                <div class="item" onclick="buy('rainbow', 1000000)"><strong>Rainbow Trail</strong><span>Colorful Aura</span><div class="price" id="p-rainbow">$1M</div></div>
+                <div class="item" onclick="buy('goldEgg', 10000000)"><strong>Golden Egg</strong><span>King of the Hill</span><div class="price" id="p-goldEgg">$10M</div></div>
+            </div>
+            <button class="close-btn" onclick="closeShop(event)">BACK TO GAME</button>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const shopBtn = document.getElementById('shopBtn');
+const shopUI = document.getElementById('shopUI');
+
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+let bank = parseFloat(localStorage.getItem('eggBank')) || 0;
+let unlocked = JSON.parse(localStorage.getItem('eggUnlocks')) || { turbo:false, night:false, small:false, rainbow:false, goldEgg:false };
+
+let egg, pipes, clouds, particles, money, gameOver, lastTime, spawnTimer, inShop = false, hue = 0;
+
+function reset() {
+    let sizeMult = unlocked.small ? 0.75 : 1.0;
+    egg = { x: 150, y: canvas.height/2, w: 42 * sizeMult, h: 58 * sizeMult, v: 0 };
+    pipes = []; clouds = []; particles = []; money = 1.00;
+    gameOver = false; inShop = false;
+    shopBtn.style.display = 'none'; shopUI.style.display = 'none';
+    lastTime = performance.now(); spawnTimer = 0;
+    for(let i=0; i<7; i++) spawnCloud(Math.random()*canvas.width);
+    spawnPipe(canvas.width + 100);
+}
+
+function spawnPipe(x) {
+    let top = Math.random() * (canvas.height - 500) + 120;
+    pipes.push({ x: x, top: top, w: 95, passed: false });
+}
+
+function spawnCloud(x) {
+    clouds.push({x: x || canvas.width + 200, y: Math.random()*canvas.height/1.5, s: Math.random()*15+10, r: Math.random()*25+15});
+}
+
+function buy(id, price) {
+    if (!unlocked[id] && bank >= price) {
+        bank -= price; unlocked[id] = true;
+        localStorage.setItem('eggBank', bank);
+        localStorage.setItem('eggUnlocks', JSON.stringify(unlocked));
+        updateUI();
+        if(id === 'small') reset();
+    }
+}
+
+function updateUI() {
+    document.getElementById('bankDisp').innerText = bank.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const prices = {night:5000, small:50000, turbo:250000, rainbow:1000000, goldEgg:10000000};
+    for(let id in unlocked) {
+        let el = document.getElementById('p-'+id);
+        if(el) { 
+            let pStr = prices[id] >= 1000000 ? (prices[id]/1000000) + "M" : (prices[id]/1000) + "k";
+            el.innerHTML = unlocked[id] ? "OWNED" : "$" + pStr; 
+            if(unlocked[id]) el.className = "price bought"; 
+        }
+    }
+}
+
+function update(dt) {
+    if (gameOver || inShop) return;
+    let speed = unlocked.turbo ? 580 : 270;
+    egg.v += 980 * dt; egg.y += egg.v * dt;
+    hue = (hue + 5) % 360;
+
+    if (Math.random() < 0.007) spawnCloud();
+    clouds.forEach((c, i) => { c.x -= c.s * dt; if(c.x < -300) clouds.splice(i, 1); });
+
+    spawnTimer += dt;
+    if (spawnTimer >= (unlocked.turbo ? 1.0 : 2.3)) { spawnPipe(canvas.width); spawnTimer = 0; }
+
+    pipes.forEach((p, i) => {
+        p.x -= speed * dt;
+        if (egg.x+8 < p.x+p.w && egg.x+egg.w-8 > p.x) {
+            if (egg.y+8 < p.top || egg.y+egg.h-8 > p.top+280) die();
+        }
+        if (!p.passed && p.x + p.w < egg.x) {
+            money *= 1.8;
+            p.passed = true;
+        }
+        if (p.x < -150) pipes.splice(i, 1);
+    });
+
+    if (unlocked.rainbow || egg.v < 0) {
+        let color = unlocked.rainbow ? `hsla(${hue}, 100%, 65%, 0.9)` : "white";
+        particles.push({x: egg.x, y: egg.y + egg.h/2, vx: -4, vy: (Math.random()-0.5)*3, life: 1, c: color});
+    }
+    particles.forEach((p, i) => { p.x += p.vx; p.y += p.vy; p.life -= 0.04; if(p.life<=0) particles.splice(i,1); });
+
+    if (egg.y + egg.h > canvas.height || egg.y < 0) die();
+}
+
+function die() {
+    if (!gameOver) { gameOver = true; bank += money; localStorage.setItem('eggBank', bank); shopBtn.style.display = 'block'; }
+}
+
+function draw() {
+    // FOND
+    if (unlocked.night) {
+        ctx.fillStyle = "#0a0f2b"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "white"; for(let i=0; i<35; i++) ctx.fillRect((i*157)%canvas.width, (i*283)%canvas.height, 2, 2);
+    } else {
+        let sky = ctx.createLinearGradient(0,0,0,canvas.height); sky.addColorStop(0, "#2c7bb6"); sky.addColorStop(1, "#8ecae6");
+        ctx.fillStyle = sky; ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+
+    // NUAGES RÉALISTES (Flous/Texturés)
+    clouds.forEach(c => {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r, 0, 7);
+        ctx.arc(c.x + c.r*1.1, c.y + 5, c.r*0.8, 0, 7);
+        ctx.arc(c.x - c.r*0.8, c.y + 10, c.r*0.7, 0, 7);
+        ctx.fill();
+    });
+
+    // TUYAUX
+    pipes.forEach(p => {
+        let grad = ctx.createLinearGradient(p.x, 0, p.x + p.w, 0);
+        grad.addColorStop(0, "#2ecc71"); grad.addColorStop(0.5, "#48c774"); grad.addColorStop(1, "#27ae60");
+        ctx.fillStyle = grad;
+        ctx.fillRect(p.x, 0, p.w, p.top);
+        ctx.fillRect(p.x, p.top + 280, p.w, canvas.height);
+        ctx.strokeStyle = "#124a2e"; ctx.lineWidth = 4;
+        ctx.strokeRect(p.x, 0, p.w, p.top);
+        ctx.strokeRect(p.x, p.top + 280, p.w, canvas.height);
+    });
+
+    particles.forEach(p => { ctx.fillStyle = p.c; ctx.globalAlpha = p.life; ctx.fillRect(p.x, p.y, 6, 6); });
+    ctx.globalAlpha = 1.0;
+
+    // EGG
+    let cx = egg.x + egg.w/2, cy = egg.y + egg.h/2;
+    if (unlocked.turbo) { 
+        ctx.fillStyle = "#FFD700"; ctx.fillRect(egg.x - 14, egg.y + 15, 18, 30); 
+        ctx.strokeStyle = "#000"; ctx.strokeRect(egg.x - 14, egg.y + 15, 18, 30);
+    }
+    
+    if (unlocked.goldEgg) {
+        let g = ctx.createRadialGradient(cx-6, cy-12, 5, cx, cy, 38);
+        g.addColorStop(0, "#fffbd6"); g.addColorStop(0.4, "#FFD700"); g.addColorStop(1, "#9c7100");
+        ctx.fillStyle = g;
+    } else { ctx.fillStyle = "#ffffff"; }
+    ctx.beginPath(); ctx.ellipse(cx, cy, egg.w/2, egg.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
+
+    // UI LISIBLE
+    ctx.textAlign = "center";
+    ctx.font = "bold 58px 'Segoe UI', sans-serif";
+    ctx.strokeStyle = "black"; ctx.lineWidth = 9;
+    ctx.strokeText(`+$${money.toFixed(2)}`, canvas.width/2, 95);
+    ctx.fillStyle = "#2ecc71";
+    ctx.fillText(`+$${money.toFixed(2)}`, canvas.width/2, 95);
+
+    if (gameOver && !inShop) {
+        ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#FFD700"; ctx.font = "bold 70px sans-serif"; ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2 - 50);
+        ctx.fillStyle = "white"; ctx.font = "32px sans-serif"; ctx.fillText(`Total: $${bank.toLocaleString(undefined, {minimumFractionDigits:2})}`, canvas.width/2, canvas.height/2 + 30);
+    }
+}
+
+function openShop(e) { e.stopPropagation(); inShop = true; updateUI(); shopUI.style.display = 'block'; shopBtn.style.display = 'none'; }
+function closeShop(e) { e.stopPropagation(); inShop = false; shopUI.style.display = 'none'; shopBtn.style.display = 'block'; }
+
+function loop(now) { update((now - lastTime)/1000 || 0.016); lastTime = now; draw(); requestAnimationFrame(loop); }
+window.addEventListener('mousedown', (e) => { if(!inShop && e.target.tagName !== 'BUTTON' && !e.target.closest('.item')) { if(gameOver) reset(); else egg.v = -400; } });
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
